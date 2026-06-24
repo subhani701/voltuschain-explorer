@@ -41,9 +41,9 @@ fi
 
 # Check Backend
 echo -n "Backend API:      "
-if curl -s http://localhost:4000/api/v2/stats | grep -q "total_blocks"; then
+if curl -s http://localhost:4001/api/v2/stats | grep -q "total_blocks"; then
     echo -e "${GREEN}✅ OK${NC}"
-    STATS=$(curl -s http://localhost:4000/api/v2/stats)
+    STATS=$(curl -s http://localhost:4001/api/v2/stats)
     TOTAL_BLOCKS=$(echo $STATS | grep -o '"total_blocks":"[^"]*"' | cut -d'"' -f4)
     TOTAL_TXS=$(echo $STATS | grep -o '"total_transactions":"[^"]*"' | cut -d'"' -f4)
     echo "                  Indexed Blocks: $TOTAL_BLOCKS"
@@ -54,7 +54,7 @@ fi
 
 # Check Frontend
 echo -n "Frontend:         "
-if curl -s http://localhost:3000 | grep -q "html"; then
+if curl -s http://localhost:3001 | grep -q "html"; then
     echo -e "${GREEN}✅ OK${NC}"
 else
     echo -e "${RED}❌ FAILED${NC}"
@@ -62,7 +62,7 @@ fi
 
 # Check Verifier
 echo -n "Contract Verifier: "
-if curl -s http://localhost:8150/api/v2/verifier/solidity/versions | grep -q "compilerVersions"; then
+if curl -s http://localhost:8151/api/v2/verifier/solidity/versions | grep -q "compilerVersions"; then
     echo -e "${GREEN}✅ OK${NC}"
 else
     echo -e "${RED}❌ FAILED${NC}"
@@ -70,7 +70,7 @@ fi
 
 # Check Stats
 echo -n "Stats Service:    "
-if curl -s http://localhost:8153/api/v1/counters | grep -q -E "(totalBlocks|error)"; then
+if curl -s http://localhost:8155/api/v1/counters | grep -q -E "(totalBlocks|error)"; then
     echo -e "${GREEN}✅ OK${NC}"
 else
     echo -e "${RED}❌ FAILED${NC}"

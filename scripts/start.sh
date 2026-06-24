@@ -29,9 +29,10 @@ docker-compose ps
 
 echo ""
 echo "🌐 Blockscout Explorer URLs:"
-echo "   Frontend:  http://localhost:3000"
-echo "   API:       http://localhost:4000/api/v2"
-echo "   Proxy:     http://localhost:80"
+echo "   Explorer (proxy):  http://localhost:8081"
+echo "   API:               http://localhost:8081/api/v2"
+echo "   Frontend (direct): http://localhost:3001"
+echo "   Backend (direct):  http://localhost:4001/api/v2"
 echo ""
 echo "📋 Useful commands:"
 echo "   View logs:     docker-compose logs -f"

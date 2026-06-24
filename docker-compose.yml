@@ -14,7 +14,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
       - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     command:
       - "postgres"
       - "-c"
@@ -40,7 +40,7 @@ services:
     volumes:
       - redis-data:/data
     ports:
-      - "6379:6379"
+      - "6381:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -67,7 +67,7 @@ services:
     volumes:
       - logs-data:/app/logs
     ports:
-      - "4000:4000"
+      - "4001:4000"
     command: sh -c "bin/blockscout eval \"Elixir.Explorer.ReleaseTasks.create_and_migrate()\" && bin/blockscout start"
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -90,7 +90,7 @@ services:
     env_file:
       - ./envs/verifier.env
     ports:
-      - "8150:8050"
+      - "8151:8050"
     networks:
       - blockscout-network
 
@@ -104,7 +104,7 @@ services:
     env_file:
       - ./envs/visualizer.env
     ports:
-      - "8151:8050"
+      - "8153:8050"
     networks:
       - blockscout-network
 
@@ -135,7 +135,7 @@ services:
     env_file:
       - ./envs/stats.env
     ports:
-      - "8153:8050"
+      - "8155:8050"
     networks:
       - blockscout-network
     environment:
@@ -178,7 +178,7 @@ services:
       - ./assets/favicon.png:/app/public/favicon/favicon.ico
       - ./assets/favicon.png:/app/public/favicon/apple-touch-icon.png
     ports:
-      - "3000:3000"
+      - "3001:3000"
     networks:
       - blockscout-network
     healthcheck:
@@ -202,7 +202,7 @@ services:
       - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
       - ./assets:/usr/share/nginx/assets:ro
     ports:
-      - "80:80"
+      - "8081:80"
     networks:
       - blockscout-network
 

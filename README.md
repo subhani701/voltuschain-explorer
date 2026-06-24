@@ -28,7 +28,7 @@ orchestrated with Docker Compose.
 
 ```
                         ┌──────────────────────────┐
-   Browser  ───── 80 ──▶│   Nginx Proxy (bs-proxy) │
+   Browser  ──── 8081 ──▶│  Nginx Proxy (bs-proxy) │
                         └─────┬───────────────┬─────┘
                               │               │
                       ┌───────▼──────┐  ┌─────▼───────────┐
@@ -47,7 +47,7 @@ orchestrated with Docker Compose.
 ```
 
 All containers communicate on a private bridge network (`blockscout-network`).
-Only the proxy (`:80`) needs to be exposed publicly; everything else is internal.
+Only the proxy (`:8081`) needs to be exposed publicly; everything else is internal.
 
 ---
 
@@ -78,37 +78,105 @@ curl -s -X POST -H "Content-Type: application/json" \
 
 ## Quick Start
 
+Everything you need to bring the explorer up from a clean checkout. Run these
+from the repository root.
+
+### 1. Clone
+
 ```bash
-# 1. Clone
-git clone <this-repo-url> voltuschain-explorer
+git clone https://github.com/subhani701/voltuschain-explorer.git
 cd voltuschain-explorer
-
-# 2. Create env files from the committed templates (see next section)
-cd envs && for f in *.env.example; do cp "$f" "${f%.example}"; done && cd ..
-
-# 3. Fill in secrets and RPC endpoints in envs/*.env  (see table below)
-
-# 4. Launch
-docker compose up -d
-
-# 5. Verify
-./scripts/healthcheck.sh
 ```
 
-Once healthy, the explorer is available at **http://localhost** (via the proxy).
+### 2. Create the env files from the templates
 
-> Helper scripts `scripts/start.sh` and `scripts/stop.sh` wrap the compose
+```bash
+cd envs && for f in *.env.example; do cp "$f" "${f%.example}"; done && cd ..
+```
+
+This creates `backend.env`, `frontend.env`, `stats.env`, `verifier.env`, and
+`visualizer.env` — the files the containers actually read.
+
+### 3. Fill in the required values
+
+Only a handful of placeholders must be set before the stack will run. The
+commands below set everything for a working deployment (see the
+[Environment Configuration](#environment-configuration) table for the full list).
+
+```bash
+# (a) Generate and insert a 64-byte secret key
+SECRET=$(openssl rand -hex 64)
+sed -i "s|^SECRET_KEY_BASE=.*|SECRET_KEY_BASE=$SECRET|" envs/backend.env
+
+# (b) Point the indexer at YOUR Geth RPC node (HTTP + WS)
+#     Replace the host below with your node's address.
+RPC_HTTP="http://YOUR_RPC_NODE_HOST"
+RPC_WS="ws://YOUR_RPC_NODE_HOST/ws"
+sed -i "s|^ETHEREUM_JSONRPC_HTTP_URL=.*|ETHEREUM_JSONRPC_HTTP_URL=$RPC_HTTP|"   envs/backend.env
+sed -i "s|^ETHEREUM_JSONRPC_TRACE_URL=.*|ETHEREUM_JSONRPC_TRACE_URL=$RPC_HTTP|" envs/backend.env
+sed -i "s|^ETHEREUM_JSONRPC_WS_URL=.*|ETHEREUM_JSONRPC_WS_URL=$RPC_WS|"         envs/backend.env
+sed -i "s|^NEXT_PUBLIC_NETWORK_RPC_URL=.*|NEXT_PUBLIC_NETWORK_RPC_URL=$RPC_HTTP|" envs/frontend.env
+
+# (c) Set the database password. For a LOCAL trial, keep the compose default
+#     `blockscout` so the templates match docker-compose.yml out of the box:
+sed -i "s|:CHANGE_ME@|:blockscout@|g" envs/backend.env envs/stats.env
+
+# (d) Set the static API key (any non-empty string is fine for a private chain)
+sed -i "s|^API_RATE_LIMIT_STATIC_API_KEY=.*|API_RATE_LIMIT_STATIC_API_KEY=local-api-key|" envs/backend.env
+```
+
+> For a **production** deployment, choose a strong DB password instead of
+> `blockscout` and also update `POSTGRES_PASSWORD` in `docker-compose.yml` to
+> match — see [Production Hardening](#production-hardening).
+
+WalletConnect (`NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` in `frontend.env`) is
+optional — it only enables the "Connect wallet" QR flow. Leave the placeholder
+if you don't need it.
+
+### 4. Launch
+
+```bash
+docker compose up -d
+```
+
+The backend automatically creates and migrates the database on first start, then
+begins indexing from `FIRST_BLOCK` (0 by default). Initial indexing can take a
+while depending on chain height and RPC speed.
+
+### 5. Verify and access
+
+```bash
+./scripts/healthcheck.sh      # checks RPC, DB, Redis, backend, frontend, verifier, stats
+docker compose ps             # per-container health status
+```
+
+Once healthy, open the explorer:
+
+| What | URL |
+|------|-----|
+| Explorer UI | http://localhost:8081 |
+| API v2 | http://localhost:8081/api/v2 |
+| Live stats | http://localhost:8081/api/v2/stats |
+
+### 6. Stop
+
+```bash
+docker compose down           # stop (data preserved in named volumes)
+docker compose down -v        # stop AND wipe all indexed data
+```
+
+> Helper scripts `scripts/start.sh` and `scripts/stop.sh` wrap these compose
 > commands for convenience.
 
 ---
 
 ## Environment Configuration
 
-> ⚠️ **The real `envs/*.env` files are NOT committed to this repository** — they
-> contain secrets (`SECRET_KEY_BASE`, API keys, DB credentials) and are excluded
-> via `.gitignore`. Only `*.env.example` **templates** are tracked. Secret values
-> are distributed separately (1Password / Vault / private channel) by the project
-> owner.
+The containers read their configuration from `envs/*.env`. Those files are **not
+committed** (they're excluded via `.gitignore` because they hold secrets); the
+repo ships `*.env.example` **templates** instead. You create the real files from
+the templates and fill in the values yourself — nothing is needed from a third
+party.
 
 **Create the working env files from the templates:**
 
@@ -119,20 +187,28 @@ cd ..
 ```
 
 This produces `backend.env`, `frontend.env`, `stats.env`, `verifier.env`, and
-`visualizer.env`. Replace every placeholder before starting the stack:
+`visualizer.env`. The Quick Start commands above set the essential ones; the full
+reference is below.
 
-| Variable | File | Replace with |
-|----------|------|--------------|
-| `SECRET_KEY_BASE` | `backend.env` | Output of `openssl rand -hex 64` (64-byte hex) |
-| `API_RATE_LIMIT_STATIC_API_KEY` | `backend.env` | The static API key (replaces `CHANGE_ME`) |
-| `DATABASE_URL`, `DATABASE_READ_ONLY_API_URL` | `backend.env` | Real DB password (replaces `CHANGE_ME`) |
-| `STATS__DB_URL`, `STATS__BLOCKSCOUT_DB_URL` | `stats.env` | Real DB password (replaces `CHANGE_ME`) |
-| `ETHEREUM_JSONRPC_*_URL` | `backend.env` | Your Geth RPC host (replaces `YOUR_RPC_NODE_HOST`) |
-| `NEXT_PUBLIC_NETWORK_RPC_URL` | `frontend.env` | Your chain's public RPC endpoint |
-| `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` | `frontend.env` | WalletConnect id from https://cloud.walletconnect.com |
+**Required** (stack will not work correctly until these are set):
 
-Also confirm chain identity in `backend.env` / `frontend.env`
-(`CHAIN_ID`, `NETWORK`, `COIN`, `COIN_NAME`, `COIN_SYMBOL`).
+| Variable | File | How to set it |
+|----------|------|---------------|
+| `SECRET_KEY_BASE` | `backend.env` | Generate your own: `openssl rand -hex 64` |
+| `ETHEREUM_JSONRPC_HTTP_URL` / `_TRACE_URL` / `_WS_URL` | `backend.env` | Your Geth node's HTTP and WS RPC endpoints |
+| `NEXT_PUBLIC_NETWORK_RPC_URL` | `frontend.env` | Same RPC endpoint, as seen by browsers |
+| `DATABASE_URL`, `DATABASE_READ_ONLY_API_URL` | `backend.env` | DB password — must match `POSTGRES_PASSWORD` in `docker-compose.yml` (default `blockscout`) |
+| `STATS__DB_URL`, `STATS__BLOCKSCOUT_DB_URL` | `stats.env` | Same DB password as above |
+| `API_RATE_LIMIT_STATIC_API_KEY` | `backend.env` | Any value you choose (used for whitelisted API access) |
+
+**Optional / customization:**
+
+| Variable | File | Notes |
+|----------|------|-------|
+| `NEXT_PUBLIC_WALLET_CONNECT_PROJECT_ID` | `frontend.env` | Free id from https://cloud.walletconnect.com — enables the wallet-connect QR flow |
+| `CHAIN_ID`, `NETWORK`, `COIN`, `COIN_NAME`, `COIN_SYMBOL` | `backend.env` | Chain identity — pre-set for Voltuswave; change for your chain |
+| `NEXT_PUBLIC_NETWORK_NAME`, `NEXT_PUBLIC_NETWORK_CURRENCY_*` | `frontend.env` | UI branding for chain/coin names |
+| `FIRST_BLOCK` / `LAST_BLOCK` | `backend.env` | Indexing range (default: from block 0 to chain tip) |
 
 > **Never commit a filled-in `.env` file.** The `.gitignore` already blocks
 > `envs/*.env` while keeping `envs/*.env.example`.
@@ -143,23 +219,23 @@ Also confirm chain identity in `backend.env` / `frontend.env`
 
 | Service | Container | Image | Host Port | Purpose |
 |---------|-----------|-------|-----------|---------|
-| Proxy | `bs-proxy` | `nginx:alpine` | **80** | Public entry point (frontend + API + CORS) |
-| Frontend | `bs-frontend` | `blockscout/frontend:v1.29.0` | 3000 | React web UI |
-| Backend | `bs-backend` | `blockscout/blockscout:6.3.0` | 4000 | Indexer + API (`/api/v2`) |
-| Database | `bs-db` | `postgres:15-alpine` | 5432 | Primary datastore |
-| Redis | `bs-redis` | `redis:7-alpine` | 6379 | Cache |
-| Verifier | `bs-verifier` | `smart-contract-verifier:v1.6.0` | 8150 | Contract verification |
-| Visualizer | `bs-visualizer` | `visualizer:v0.2.1` | 8151 | Contract diagrams |
-| Stats | `bs-stats` | `stats:v1.6.0` | 8153 | Charts & counters |
+| Proxy | `bs-proxy` | `nginx:alpine` | **8081** | Public entry point (frontend + API + CORS) |
+| Frontend | `bs-frontend` | `blockscout/frontend:v1.29.0` | 3001 | React web UI |
+| Backend | `bs-backend` | `blockscout/blockscout:6.3.0` | 4001 | Indexer + API (`/api/v2`) |
+| Database | `bs-db` | `postgres:15-alpine` | 5433 | Primary datastore |
+| Redis | `bs-redis` | `redis:7-alpine` | 6381 | Cache |
+| Verifier | `bs-verifier` | `smart-contract-verifier:v1.6.0` | 8151 | Contract verification |
+| Visualizer | `bs-visualizer` | `visualizer:v0.2.1` | 8153 | Contract diagrams |
+| Stats | `bs-stats` | `stats:v1.6.0` | 8155 | Charts & counters |
 | Assets | `bs-assets` | `nginx:alpine` | _(internal)_ | Serves logos/icons |
 
-**Public access** goes through the proxy on port **80**:
+**Public access** goes through the proxy on port **8081**:
 
-- Explorer UI — `http://localhost/`
-- API v2 — `http://localhost/api/v2`
+- Explorer UI — `http://localhost:8081/`
+- API v2 — `http://localhost:8081/api/v2`
 
-The direct service ports (3000, 4000, 5432, 6379, 8150–8153) are convenient for
-debugging but **should not be exposed publicly in production** — see below.
+The direct service ports (3001, 4001, 5433, 6381, 8151/8153/8155) are convenient
+for debugging but **should not be exposed publicly in production** — see below.
 
 ---
 
@@ -173,8 +249,8 @@ explorer to the internet, apply the following:
    `POSTGRES_USER/POSTGRES_PASSWORD = blockscout/blockscout`. Override it and
    update the matching `DATABASE_URL` / `STATS__*_DB_URL` connection strings.
 3. **Do not publish internal ports.** Remove (or bind to `127.0.0.1`) the host
-   port mappings for `db` (5432), `redis` (6379), `backend` (4000),
-   `frontend` (3000), and the microservices. Only the proxy (`80`) should be
+   port mappings for `db` (5433), `redis` (6381), `backend` (4001),
+   `frontend` (3001), and the microservices. Only the proxy (`8081`) should be
    reachable externally.
 4. **Terminate TLS.** Put the proxy behind HTTPS (e.g. a load balancer or a
    Certbot/Nginx TLS setup) and set `BLOCKSCOUT_PROTOCOL=https`,
@@ -252,7 +328,7 @@ verifier, and stats, and prints indexing progress):
 Check indexing progress directly via the API:
 
 ```bash
-curl -s http://localhost/api/v2/stats | jq
+curl -s http://localhost:8081/api/v2/stats | jq
 ```
 
 Each container also defines a Docker `healthcheck`, so `docker compose ps`
@@ -273,12 +349,12 @@ reports per-service health status.
 - Check RPC node performance and `debug_traceTransaction` availability
 
 **Frontend loads but shows no data**
-- Verify the API through the proxy: `curl http://localhost/api/v2/stats`
+- Verify the API through the proxy: `curl http://localhost:8081/api/v2/stats`
 - Confirm `NEXT_PUBLIC_*` values in `frontend.env` match your deployment host
 - `docker compose logs frontend`
 
 **CORS errors in the browser**
-- CORS is handled by the Nginx proxy; access the app via port **80**, not the
+- CORS is handled by the Nginx proxy; access the app via port **8081**, not the
   direct service ports. Check `nginx/nginx.conf` and `API_V2_ALLOWED_ORIGINS`.
 
 ---
