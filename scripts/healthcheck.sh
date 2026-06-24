@@ -41,9 +41,9 @@ fi
 
 # Check Backend
 echo -n "Backend API:      "
-if curl -s http://localhost:4003/api/v2/stats | grep -q "total_blocks"; then
+if curl -s http://localhost:43001/api/v2/stats | grep -q "total_blocks"; then
     echo -e "${GREEN}✅ OK${NC}"
-    STATS=$(curl -s http://localhost:4003/api/v2/stats)
+    STATS=$(curl -s http://localhost:43001/api/v2/stats)
     TOTAL_BLOCKS=$(echo $STATS | grep -o '"total_blocks":"[^"]*"' | cut -d'"' -f4)
     TOTAL_TXS=$(echo $STATS | grep -o '"total_transactions":"[^"]*"' | cut -d'"' -f4)
     echo "                  Indexed Blocks: $TOTAL_BLOCKS"
@@ -54,7 +54,7 @@ fi
 
 # Check Frontend
 echo -n "Frontend:         "
-if curl -s http://localhost:3003 | grep -q "html"; then
+if curl -s http://localhost:41001 | grep -q "html"; then
     echo -e "${GREEN}✅ OK${NC}"
 else
     echo -e "${RED}❌ FAILED${NC}"
