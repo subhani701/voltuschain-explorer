@@ -14,6 +14,7 @@ orchestrated with Docker Compose.
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)
 - [Environment Configuration](#environment-configuration)
+- [Deploy on EC2](#deploy-on-ec2)
 - [Service & Port Reference](#service--port-reference)
 - [Production Hardening](#production-hardening)
 - [Operations](#operations)
@@ -212,6 +213,93 @@ reference is below.
 
 > **Never commit a filled-in `.env` file.** The `.gitignore` already blocks
 > `envs/*.env` while keeping `envs/*.env.example`.
+
+---
+
+## Deploy on EC2
+
+The [Quick Start](#quick-start) uses `localhost`, which only works when the
+browser runs **on the same machine** as the stack. On a server like EC2, users
+open the explorer from their own browsers over the network, so the public-facing
+URLs in the env files must point at the **instance's public IP or domain** — not
+`localhost`. The `NEXT_PUBLIC_*` values are shipped to the browser, so if they
+say `localhost` the browser calls itself instead of the server.
+
+Throughout this section, `EC2_HOST` = the instance's **public IPv4** (e.g.
+`13.234.x.x`) or a domain pointed at it.
+
+### 1. Set the public-facing env values
+
+`envs/frontend.env`:
+
+```env
+NEXT_PUBLIC_APP_HOST=EC2_HOST
+NEXT_PUBLIC_API_HOST=EC2_HOST
+NEXT_PUBLIC_API_PORT=7101
+NEXT_PUBLIC_API_PROTOCOL=http
+NEXT_PUBLIC_API_WEBSOCKET_PROTOCOL=ws
+NEXT_PUBLIC_STATS_API_HOST=http://EC2_HOST:7101
+NEXT_PUBLIC_VISUALIZE_API_HOST=http://EC2_HOST:7101
+```
+
+`envs/backend.env`:
+
+```env
+WEBAPP_URL=http://EC2_HOST:7101
+API_V2_ALLOWED_ORIGINS=http://EC2_HOST:7101   # CORS — must match the URL users hit
+```
+
+Everything else (secrets, RPC endpoints, chain identity) is set the same way as
+in [Environment Configuration](#environment-configuration).
+
+> ⚠️ `NEXT_PUBLIC_*` values are baked into the frontend **at container start**.
+> If you change them after the stack is already running, you must recreate the
+> container: `docker compose up -d --force-recreate frontend backend`.
+
+### 2. Open the proxy port in the Security Group
+
+The EC2 **Security Group is the real firewall** — Docker publishes the host
+ports, but only what the SG allows is reachable from outside.
+
+| Rule | Port | Source | Why |
+|------|------|--------|-----|
+| Allow | **7101** (TCP) | your office CIDR, or `0.0.0.0/0` for public | the explorer (proxy) |
+| Allow | **22** (TCP) | your admin IP | SSH management |
+| **Do NOT add** | 7401, 7701, 5433, 6381, 8151, 8153, 8155 | — | debug/internal — keep the DB & backend off the internet |
+
+Leaving the internal ports out of the SG keeps PostgreSQL, Redis, and the
+backend unreachable from the internet even though Compose publishes them on the
+host.
+
+### 3. Launch
+
+```bash
+docker compose up -d
+./scripts/healthcheck.sh
+```
+
+Open **`http://EC2_HOST:7101`**.
+
+### 4. Prerequisites specific to EC2
+
+- **RPC reachability** — the instance must be able to reach your Geth node
+  (`ETHEREUM_JSONRPC_HTTP_URL`). If the node sits behind a VPC-internal load
+  balancer, run the explorer in the same VPC/region or expose the RPC endpoint.
+- **Instance size** — the indexer is memory-bound (`INDEXER_MEMORY_LIMIT=8g`).
+  Use at least a **t3.large (8 GB RAM)**, ideally t3.xlarge, with enough EBS for
+  the chain's history.
+
+### 5. Production: add a domain + HTTPS (recommended)
+
+For a real deployment, terminate TLS in front of the proxy (an ALB with an ACM
+certificate, or Nginx + Certbot on the host) and then:
+
+- Point a domain (Route 53) at the instance / load balancer.
+- Switch the protocols to `https` / `wss` and use port **443** instead of `7101`
+  in all the values above (drop the `:7101`).
+- Update `API_V2_ALLOWED_ORIGINS` to the `https://` domain.
+
+See [Production Hardening](#production-hardening) for the full checklist.
 
 ---
 
