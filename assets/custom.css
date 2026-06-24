@@ -1,0 +1,31 @@
+/* ============================================================
+   Voltuswave — remove Blockscout branding from the footer.
+   CSS handles instant (no-flash) hiding of known branding
+   links/buttons by attribute. Text-based items (description,
+   version line, "Made by Blockscout") are handled in
+   hide-blockscout.js since CSS cannot match on text.
+   ============================================================ */
+
+/* Branding & social links anywhere in the footer */
+footer a[href*="blockscout.com"],
+footer a[href*="github.com/blockscout"],
+footer a[href*="github.com/sponsors"],
+footer a[href*="discord.gg"],
+footer a[href*="discord.com"],
+footer a[href*="giveth.io"],
+footer a[href*="canny.io"],
+footer a[href*="t.me/"],
+footer a[href*="twitter.com"],
+footer a[href*="x.com"],
+footer a[href*="opensea.io"],
+footer a[href*="medium.com"],
+footer a[href*="youtube.com"],
+footer a[href*="linkedin.com"],
+footer a[href*="reddit.com"] {
+  display: none !important;
+}
+
+/* "Add Blockscout to your wallet" / any footer buttons */
+footer button {
+  display: none !important;
+}

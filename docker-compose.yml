@@ -1,0 +1,216 @@
+services:
+  # ============================================
+  # PostgreSQL Database
+  # ============================================
+  db:
+    image: postgres:15-alpine
+    restart: always
+    container_name: bs-db
+    environment:
+      POSTGRES_PASSWORD: blockscout
+      POSTGRES_USER: blockscout
+      POSTGRES_DB: blockscout
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    ports:
+      - "5432:5432"
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=512MB"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U blockscout -d blockscout"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - blockscout-network
+
+  # ============================================
+  # Redis Cache
+  # ============================================
+  redis:
+    image: redis:7-alpine
+    restart: always
+    container_name: bs-redis
+    command: redis-server --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - blockscout-network
+
+  # ============================================
+  # Blockscout Backend (Geth Clique Optimized)
+  # ============================================
+  backend:
+    image: blockscout/blockscout:6.3.0
+    restart: always
+    container_name: bs-backend
+    pull_policy: always
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file:
+      - ./envs/backend.env
+    volumes:
+      - logs-data:/app/logs
+    ports:
+      - "4000:4000"
+    command: sh -c "bin/blockscout eval \"Elixir.Explorer.ReleaseTasks.create_and_migrate()\" && bin/blockscout start"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/api/v2/stats"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
+    networks:
+      - blockscout-network
+
+  # ============================================
+  # Smart Contract Verifier
+  # ============================================
+  smart-contract-verifier:
+    image: ghcr.io/blockscout/smart-contract-verifier:v1.6.0
+    restart: always
+    container_name: bs-verifier
+    env_file:
+      - ./envs/verifier.env
+    ports:
+      - "8150:8050"
+    networks:
+      - blockscout-network
+
+  # ============================================
+  # Visualizer (Contract Diagrams)
+  # ============================================
+  visualizer:
+    image: ghcr.io/blockscout/visualizer:v0.2.1
+    restart: always
+    container_name: bs-visualizer
+    env_file:
+      - ./envs/visualizer.env
+    ports:
+      - "8151:8050"
+    networks:
+      - blockscout-network
+
+  # ============================================
+  # Signature Provider (Optional - disabled if image unavailable)
+  # ============================================
+  # sig-provider:
+  #   image: ghcr.io/blockscout/sig-provider:latest
+  #   restart: always
+  #   container_name: bs-sig-provider
+  #   ports:
+  #     - "8152:8050"
+  #   networks:
+  #     - blockscout-network
+
+  # ============================================
+  # Stats Service
+  # ============================================
+  stats:
+    image: ghcr.io/blockscout/stats:v1.6.0
+    restart: always
+    container_name: bs-stats
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    env_file:
+      - ./envs/stats.env
+    ports:
+      - "8153:8050"
+    networks:
+      - blockscout-network
+    environment:
+      - STATS__CREATE_DATABASE=true
+      - STATS__RUN_MIGRATIONS=true
+
+  # ============================================
+  # Assets Server (for logos/icons)
+  # ============================================
+  assets:
+    image: nginx:alpine
+    restart: always
+    container_name: bs-assets
+    volumes:
+      - ./assets:/usr/share/nginx/html:ro
+    networks:
+      - blockscout-network
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost/logo.svg > /dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  # ============================================
+  # Frontend (React UI)
+  # ============================================
+  frontend:
+    image: ghcr.io/blockscout/frontend:v1.29.0
+    restart: always
+    container_name: bs-frontend
+    platform: linux/amd64
+    depends_on:
+      backend:
+        condition: service_healthy
+      assets:
+        condition: service_healthy
+    env_file:
+      - ./envs/frontend.env
+    volumes:
+      - ./assets/favicon.png:/app/public/favicon/favicon.ico
+      - ./assets/favicon.png:/app/public/favicon/apple-touch-icon.png
+    ports:
+      - "3000:3000"
+    networks:
+      - blockscout-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ============================================
+  # Nginx Reverse Proxy
+  # ============================================
+  proxy:
+    image: nginx:alpine
+    restart: always
+    container_name: bs-proxy
+    depends_on:
+      - frontend
+      - backend
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./assets:/usr/share/nginx/assets:ro
+    ports:
+      - "80:80"
+    networks:
+      - blockscout-network
+
+networks:
+  blockscout-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  logs-data:
