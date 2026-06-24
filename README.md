@@ -28,7 +28,7 @@ orchestrated with Docker Compose.
 
 ```
                         ┌──────────────────────────┐
-   Browser  ──── 8081 ──▶│  Nginx Proxy (bs-proxy) │
+   Browser  ──── 8091 ──▶│  Nginx Proxy (bs-proxy) │
                         └─────┬───────────────┬─────┘
                               │               │
                       ┌───────▼──────┐  ┌─────▼───────────┐
@@ -47,7 +47,7 @@ orchestrated with Docker Compose.
 ```
 
 All containers communicate on a private bridge network (`blockscout-network`).
-Only the proxy (`:8081`) needs to be exposed publicly; everything else is internal.
+Only the proxy (`:8091`) needs to be exposed publicly; everything else is internal.
 
 ---
 
@@ -154,9 +154,9 @@ Once healthy, open the explorer:
 
 | What | URL |
 |------|-----|
-| Explorer UI | http://localhost:8081 |
-| API v2 | http://localhost:8081/api/v2 |
-| Live stats | http://localhost:8081/api/v2/stats |
+| Explorer UI | http://localhost:8091 |
+| API v2 | http://localhost:8091/api/v2 |
+| Live stats | http://localhost:8091/api/v2/stats |
 
 ### 6. Stop
 
@@ -219,9 +219,9 @@ reference is below.
 
 | Service | Container | Image | Host Port | Purpose |
 |---------|-----------|-------|-----------|---------|
-| Proxy | `bs-proxy` | `nginx:alpine` | **8081** | Public entry point (frontend + API + CORS) |
-| Frontend | `bs-frontend` | `blockscout/frontend:v1.29.0` | 3001 | React web UI |
-| Backend | `bs-backend` | `blockscout/blockscout:6.3.0` | 4001 | Indexer + API (`/api/v2`) |
+| Proxy | `bs-proxy` | `nginx:alpine` | **8091** | Public entry point (frontend + API + CORS) |
+| Frontend | `bs-frontend` | `blockscout/frontend:v1.29.0` | 3003 | React web UI |
+| Backend | `bs-backend` | `blockscout/blockscout:6.3.0` | 4003 | Indexer + API (`/api/v2`) |
 | Database | `bs-db` | `postgres:15-alpine` | 5433 | Primary datastore |
 | Redis | `bs-redis` | `redis:7-alpine` | 6381 | Cache |
 | Verifier | `bs-verifier` | `smart-contract-verifier:v1.6.0` | 8151 | Contract verification |
@@ -229,12 +229,12 @@ reference is below.
 | Stats | `bs-stats` | `stats:v1.6.0` | 8155 | Charts & counters |
 | Assets | `bs-assets` | `nginx:alpine` | _(internal)_ | Serves logos/icons |
 
-**Public access** goes through the proxy on port **8081**:
+**Public access** goes through the proxy on port **8091**:
 
-- Explorer UI — `http://localhost:8081/`
-- API v2 — `http://localhost:8081/api/v2`
+- Explorer UI — `http://localhost:8091/`
+- API v2 — `http://localhost:8091/api/v2`
 
-The direct service ports (3001, 4001, 5433, 6381, 8151/8153/8155) are convenient
+The direct service ports (3003, 4003, 5433, 6381, 8151/8153/8155) are convenient
 for debugging but **should not be exposed publicly in production** — see below.
 
 ---
@@ -249,8 +249,8 @@ explorer to the internet, apply the following:
    `POSTGRES_USER/POSTGRES_PASSWORD = blockscout/blockscout`. Override it and
    update the matching `DATABASE_URL` / `STATS__*_DB_URL` connection strings.
 3. **Do not publish internal ports.** Remove (or bind to `127.0.0.1`) the host
-   port mappings for `db` (5433), `redis` (6381), `backend` (4001),
-   `frontend` (3001), and the microservices. Only the proxy (`8081`) should be
+   port mappings for `db` (5433), `redis` (6381), `backend` (4003),
+   `frontend` (3003), and the microservices. Only the proxy (`8091`) should be
    reachable externally.
 4. **Terminate TLS.** Put the proxy behind HTTPS (e.g. a load balancer or a
    Certbot/Nginx TLS setup) and set `BLOCKSCOUT_PROTOCOL=https`,
@@ -328,7 +328,7 @@ verifier, and stats, and prints indexing progress):
 Check indexing progress directly via the API:
 
 ```bash
-curl -s http://localhost:8081/api/v2/stats | jq
+curl -s http://localhost:8091/api/v2/stats | jq
 ```
 
 Each container also defines a Docker `healthcheck`, so `docker compose ps`
@@ -349,12 +349,12 @@ reports per-service health status.
 - Check RPC node performance and `debug_traceTransaction` availability
 
 **Frontend loads but shows no data**
-- Verify the API through the proxy: `curl http://localhost:8081/api/v2/stats`
+- Verify the API through the proxy: `curl http://localhost:8091/api/v2/stats`
 - Confirm `NEXT_PUBLIC_*` values in `frontend.env` match your deployment host
 - `docker compose logs frontend`
 
 **CORS errors in the browser**
-- CORS is handled by the Nginx proxy; access the app via port **8081**, not the
+- CORS is handled by the Nginx proxy; access the app via port **8091**, not the
   direct service ports. Check `nginx/nginx.conf` and `API_V2_ALLOWED_ORIGINS`.
 
 ---
